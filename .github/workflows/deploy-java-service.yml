@@ -51,9 +51,6 @@ jobs:
     name: Run Tests
     if: ${{ inputs.run-tests }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      checks: write
     steps:
       - name: Echo
         run: echo "Testing ${{ inputs.service-name }}"
@@ -63,9 +60,6 @@ jobs:
     needs: [test]
     if: always() && (needs.test.result == 'success' || needs.test.result == 'skipped')
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
     steps:
       - name: Echo
         run: echo "Building ${{ inputs.service-name }}"
@@ -74,9 +68,6 @@ jobs:
     name: Deploy to Cloud Run
     needs: [build-and-push]
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
     steps:
       - name: Echo
         run: echo "Deploying ${{ inputs.service-name }} to ${{ inputs.environment }}"
