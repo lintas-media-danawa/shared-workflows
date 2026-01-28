@@ -52,15 +52,14 @@ on:
         type: number
         default: 80
 
-concurrency:
-  group: deploy-${{ inputs.service-name }}-${{ inputs.environment }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   test:
     name: Run Tests
     if: ${{ inputs.run-tests }}
     runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-${{ inputs.service-name }}-${{ inputs.environment }}-test
+      cancel-in-progress: true
     permissions:
       contents: read
       checks: write
@@ -166,10 +165,9 @@ jobs:
           cache-to: type=registry,ref=${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:buildcache,mode=max
 
   deploy:
-    name: Deploy to Cloud Run
+    name: Deploy to Cloud Run (${{ inputs.environment }})
     needs: [build-and-push]
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment == 'prod' && 'production' || 'dev' }}
     permissions:
       contents: read
       id-token: write
