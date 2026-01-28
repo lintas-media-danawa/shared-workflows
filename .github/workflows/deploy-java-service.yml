@@ -137,6 +137,9 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            GITHUB_ACTOR=${{ github.actor }}
+            GITHUB_TOKEN=${{ secrets.PAT_TOKEN }}
           tags: |
             ${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:${{ github.sha }}
             ${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:${{ inputs.environment }}-latest
