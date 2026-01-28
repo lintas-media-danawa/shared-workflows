@@ -6,9 +6,11 @@ on:
       service-name:
         required: true
         type: string
+        description: 'Service name (e.g., core-service)'
       environment:
         required: true
         type: string
+        description: 'Target environment (dev or prod)'
       java-version:
         type: string
         default: '21'
@@ -27,15 +29,19 @@ on:
       db-user:
         required: true
         type: string
+        description: 'Database username (e.g., core_service)'
       db-secret-name:
         required: true
         type: string
+        description: 'DB password secret base name without env suffix (e.g., db-core-service-password)'
       additional-env-vars:
         type: string
         default: ''
+        description: 'Additional env vars in format: KEY1=value1,KEY2=value2'
       additional-secrets:
         type: string
         default: ''
+        description: 'Additional secrets in format: ENV_VAR=secret-name-{env}:version (use {env} as placeholder)'
       run-tests:
         type: boolean
         default: true
@@ -51,23 +57,217 @@ jobs:
     name: Run Tests
     if: ${{ inputs.run-tests }}
     runs-on: ubuntu-latest
+
     steps:
-      - name: Echo
-        run: echo "Testing ${{ inputs.service-name }}"
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Checkout shared-lib
+        uses: actions/checkout@v4
+        with:
+          repository: lintas-media-danawa/shared-lib
+          path: shared-lib
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build shared-lib
+        run: |
+          cd shared-lib
+          mvn clean install -DskipTests -B
+
+      - name: Run tests
+        run: mvn -B clean test
 
   build-and-push:
     name: Build & Push Image
     needs: [test]
     if: always() && (needs.test.result == 'success' || needs.test.result == 'skipped')
     runs-on: ubuntu-latest
+
     steps:
-      - name: Echo
-        run: echo "Building ${{ inputs.service-name }}"
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Checkout shared-lib
+        uses: actions/checkout@v4
+        with:
+          repository: lintas-media-danawa/shared-lib
+          path: shared-lib
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build shared-lib
+        run: |
+          cd shared-lib
+          mvn clean install -DskipTests -B
+
+      - name: Build application
+        run: mvn -B clean package -DskipTests
+
+      - name: Set environment-specific variables
+        id: env
+        run: |
+          if [ "${{ inputs.environment }}" == "prod" ]; then
+            echo "gcp_project=${{ vars.GCP_PROJECT_ID_PROD }}" >> $GITHUB_OUTPUT
+            echo "region=${{ vars.GCP_REGION_PROD }}" >> $GITHUB_OUTPUT
+            echo "registry=${{ vars.ARTIFACT_REGISTRY_URL_PROD }}" >> $GITHUB_OUTPUT
+          else
+            echo "gcp_project=${{ vars.GCP_PROJECT_ID_DEV }}" >> $GITHUB_OUTPUT
+            echo "region=${{ vars.GCP_REGION_DEV }}" >> $GITHUB_OUTPUT
+            echo "registry=${{ vars.ARTIFACT_REGISTRY_URL_DEV }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ inputs.environment == 'prod' && secrets.WORKLOAD_IDENTITY_PROVIDER_PROD || secrets.WORKLOAD_IDENTITY_PROVIDER_DEV }}
+          service_account: ${{ inputs.environment == 'prod' && secrets.SERVICE_ACCOUNT_EMAIL_PROD || secrets.SERVICE_ACCOUNT_EMAIL_DEV }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ steps.env.outputs.region }}-docker.pkg.dev
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:${{ github.sha }}
+            ${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:${{ inputs.environment }}-latest
+          cache-from: type=registry,ref=${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:buildcache
+          cache-to: type=registry,ref=${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:buildcache,mode=max
 
   deploy:
-    name: Deploy to Cloud Run
+    name: Deploy to Cloud Run (${{ inputs.environment }})
     needs: [build-and-push]
     runs-on: ubuntu-latest
+
     steps:
-      - name: Echo
-        run: echo "Deploying ${{ inputs.service-name }} to ${{ inputs.environment }}"
+      - name: Set environment-specific variables
+        id: env
+        run: |
+          ENV="${{ inputs.environment }}"
+          
+          if [ "$ENV" == "prod" ]; then
+            echo "gcp_project=${{ vars.GCP_PROJECT_ID_PROD }}" >> $GITHUB_OUTPUT
+            echo "region=${{ vars.GCP_REGION_PROD }}" >> $GITHUB_OUTPUT
+            echo "registry=${{ vars.ARTIFACT_REGISTRY_URL_PROD }}" >> $GITHUB_OUTPUT
+            echo "vpc_connector=${{ vars.VPC_CONNECTOR_PROD }}" >> $GITHUB_OUTPUT
+            echo "cloudsql=${{ vars.CLOUDSQL_CONNECTION_PROD }}" >> $GITHUB_OUTPUT
+            echo "db_name=${{ vars.DB_NAME_PROD }}" >> $GITHUB_OUTPUT
+            echo "min_instances=1" >> $GITHUB_OUTPUT
+            echo "env_suffix=prod" >> $GITHUB_OUTPUT
+          else
+            echo "gcp_project=${{ vars.GCP_PROJECT_ID_DEV }}" >> $GITHUB_OUTPUT
+            echo "region=${{ vars.GCP_REGION_DEV }}" >> $GITHUB_OUTPUT
+            echo "registry=${{ vars.ARTIFACT_REGISTRY_URL_DEV }}" >> $GITHUB_OUTPUT
+            echo "vpc_connector=${{ vars.VPC_CONNECTOR_DEV }}" >> $GITHUB_OUTPUT
+            echo "cloudsql=${{ vars.CLOUDSQL_CONNECTION_DEV }}" >> $GITHUB_OUTPUT
+            echo "db_name=${{ vars.DB_NAME_DEV }}" >> $GITHUB_OUTPUT
+            echo "min_instances=${{ inputs.min-instances }}" >> $GITHUB_OUTPUT
+            echo "env_suffix=dev" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ inputs.environment == 'prod' && secrets.WORKLOAD_IDENTITY_PROVIDER_PROD || secrets.WORKLOAD_IDENTITY_PROVIDER_DEV }}
+          service_account: ${{ inputs.environment == 'prod' && secrets.SERVICE_ACCOUNT_EMAIL_PROD || secrets.SERVICE_ACCOUNT_EMAIL_DEV }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run
+        run: |
+          # Service account: {service-name}-{env}@{project}.iam.gserviceaccount.com
+          SERVICE_ACCOUNT="${{ inputs.service-name }}-${{ steps.env.outputs.env_suffix }}@${{ steps.env.outputs.gcp_project }}.iam.gserviceaccount.com"
+          
+          # DB password secret: {db-secret-name}-{env}:latest
+          DB_SECRET="${{ inputs.db-secret-name }}-${{ steps.env.outputs.env_suffix }}:latest"
+          
+          # Build secrets flag
+          SECRETS_FLAG="DB_PASSWORD=${DB_SECRET}"
+          if [ -n "${{ inputs.additional-secrets }}" ]; then
+            # Replace {env} placeholder with actual environment suffix
+            ADDITIONAL_SECRETS=$(echo "${{ inputs.additional-secrets }}" | sed "s/{env}/${{ steps.env.outputs.env_suffix }}/g")
+            SECRETS_FLAG="${SECRETS_FLAG},${ADDITIONAL_SECRETS}"
+          fi
+          
+          # Build env vars
+          ENV_VARS="GCP_PROJECT_ID=${{ steps.env.outputs.gcp_project }}"
+          ENV_VARS="${ENV_VARS},CLOUD_SQL_INSTANCE=${{ steps.env.outputs.cloudsql }}"
+          ENV_VARS="${ENV_VARS},DB_NAME=${{ steps.env.outputs.db_name }}"
+          ENV_VARS="${ENV_VARS},DB_USER=${{ inputs.db-user }}"
+          ENV_VARS="${ENV_VARS},DB_POOL_SIZE=5"
+          if [ -n "${{ inputs.additional-env-vars }}" ]; then
+            ENV_VARS="${ENV_VARS},${{ inputs.additional-env-vars }}"
+          fi
+          
+          echo "==========================================="
+          echo "Deploying ${{ inputs.service-name }}"
+          echo "==========================================="
+          echo "Environment:     ${{ inputs.environment }}"
+          echo "Project:         ${{ steps.env.outputs.gcp_project }}"
+          echo "Region:          ${{ steps.env.outputs.region }}"
+          echo "Service Account: ${SERVICE_ACCOUNT}"
+          echo "Image:           ${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:${{ github.sha }}"
+          echo "==========================================="
+          
+          gcloud run deploy ${{ inputs.service-name }} \
+            --image ${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:${{ github.sha }} \
+            --region ${{ steps.env.outputs.region }} \
+            --project ${{ steps.env.outputs.gcp_project }} \
+            --platform managed \
+            --service-account ${SERVICE_ACCOUNT} \
+            --vpc-connector ${{ steps.env.outputs.vpc_connector }} \
+            --vpc-egress private-ranges-only \
+            --add-cloudsql-instances ${{ steps.env.outputs.cloudsql }} \
+            --cpu ${{ inputs.cpu }} \
+            --memory ${{ inputs.memory }} \
+            --min-instances ${{ steps.env.outputs.min_instances }} \
+            --max-instances ${{ inputs.max-instances }} \
+            --timeout ${{ inputs.timeout }} \
+            --concurrency ${{ inputs.concurrency-limit }} \
+            --allow-unauthenticated \
+            --set-env-vars "${ENV_VARS}" \
+            --set-secrets "${SECRETS_FLAG}"
+
+      - name: Verify deployment
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ inputs.service-name }} \
+            --region ${{ steps.env.outputs.region }} \
+            --project ${{ steps.env.outputs.gcp_project }} \
+            --format='value(status.url)')
+          
+          REVISION=$(gcloud run services describe ${{ inputs.service-name }} \
+            --region ${{ steps.env.outputs.region }} \
+            --project ${{ steps.env.outputs.gcp_project }} \
+            --format='value(status.latestReadyRevisionName)')
+          
+          echo ""
+          echo "==========================================="
+          echo "Deployment Successful"
+          echo "==========================================="
+          echo "Service:     ${{ inputs.service-name }}"
+          echo "Environment: ${{ inputs.environment }}"
+          echo "Revision:    ${REVISION}"
+          echo "URL:         ${SERVICE_URL}"
+          echo "==========================================="
