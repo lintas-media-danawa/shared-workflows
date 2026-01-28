@@ -57,6 +57,7 @@ jobs:
     name: Run Tests
     if: ${{ inputs.run-tests }}
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment == 'prod' && 'production' || 'dev' }}
 
     steps:
       - name: Checkout code
@@ -89,6 +90,7 @@ jobs:
     needs: [test]
     if: always() && (needs.test.result == 'success' || needs.test.result == 'skipped')
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment == 'prod' && 'production' || 'dev' }}
 
     steps:
       - name: Checkout code
@@ -159,6 +161,7 @@ jobs:
     name: Deploy to Cloud Run (${{ inputs.environment }})
     needs: [build-and-push]
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment == 'prod' && 'production' || 'dev' }}
 
     steps:
       - name: Set environment-specific variables
