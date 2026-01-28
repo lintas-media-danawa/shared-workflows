@@ -1,0 +1,59 @@
+# Example: core-service/.github/workflows/deploy.yml
+# Copy this file to your service repository and customize as needed.
+
+name: Deploy Core Service
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'src/**'
+      - 'pom.xml'
+      - 'Dockerfile'
+      - '.github/workflows/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
+
+jobs:
+  determine-environment:
+    name: Determine Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+    steps:
+      - name: Set environment based on trigger
+        id: set-env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "environment=prod" >> $GITHUB_OUTPUT
+          else
+            echo "environment=dev" >> $GITHUB_OUTPUT
+          fi
+
+  deploy:
+    name: Deploy
+    needs: [determine-environment]
+    uses: lintas-media-danawa/shared-workflows/.github/workflows/deploy-java-service.yml@main
+    with:
+      service-name: core-service
+      environment: ${{ needs.determine-environment.outputs.environment }}
+      java-version: '21'
+      memory: 512Mi
+      cpu: '1'
+      min-instances: 0
+      max-instances: 10
+      db-user: core_service
+      db-secret-name: db-core-service-password
+      run-tests: true
+    secrets: inherit
