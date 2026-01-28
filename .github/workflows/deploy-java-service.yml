@@ -76,7 +76,7 @@ jobs:
       - name: Run tests
         run: mvn -B clean test
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
 
   build-and-push:
     name: Build & Push Image
@@ -102,7 +102,7 @@ jobs:
       - name: Build application
         run: mvn -B clean package -DskipTests
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
 
       - name: Set environment-specific variables
         id: env
