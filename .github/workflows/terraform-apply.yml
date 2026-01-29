@@ -1,0 +1,146 @@
+name: Terraform Apply (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+        description: 'Target environment (dev or prod)'
+      terraform_dir:
+        type: string
+        default: 'terraform'
+      terraform_version:
+        type: string
+        default: '1.5.7'
+      auto_approve:
+        type: boolean
+        default: false
+        description: 'Auto-approve apply (use with caution for prod)'
+
+jobs:
+  apply:
+    name: Apply (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate prod deployment
+        if: inputs.environment == 'prod' || inputs.environment == 'production'
+        run: |
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "::error::Production deployments must be triggered manually via workflow_dispatch"
+            exit 1
+          fi
+          
+          if [ "${{ inputs.auto_approve }}" != "true" ]; then
+            echo "::error::Production deployments require auto_approve: true"
+            exit 1
+          fi
+          
+          echo "✓ Production deployment validated"
+
+      - name: Set environment-specific variables
+        id: env
+        run: |
+          ENV="${{ inputs.environment }}"
+          
+          if [ "$ENV" == "prod" ] || [ "$ENV" == "production" ]; then
+            echo "gcp_project=${{ vars.GCP_PROJECT_ID_PROD }}" >> $GITHUB_OUTPUT
+            echo "state_bucket=${{ vars.TF_STATE_BUCKET_PROD }}" >> $GITHUB_OUTPUT
+            echo "wif_provider=${{ secrets.WORKLOAD_IDENTITY_PROVIDER_PROD }}" >> $GITHUB_OUTPUT
+            echo "sa_email=${{ secrets.SERVICE_ACCOUNT_EMAIL_PROD }}" >> $GITHUB_OUTPUT
+            echo "tfvars_file=environments/prod.tfvars" >> $GITHUB_OUTPUT
+            echo "env_name=prod" >> $GITHUB_OUTPUT
+          else
+            echo "gcp_project=${{ vars.GCP_PROJECT_ID_DEV }}" >> $GITHUB_OUTPUT
+            echo "state_bucket=${{ vars.TF_STATE_BUCKET_DEV }}" >> $GITHUB_OUTPUT
+            echo "wif_provider=${{ secrets.WORKLOAD_IDENTITY_PROVIDER_DEV }}" >> $GITHUB_OUTPUT
+            echo "sa_email=${{ secrets.SERVICE_ACCOUNT_EMAIL_DEV }}" >> $GITHUB_OUTPUT
+            echo "tfvars_file=environments/dev.tfvars" >> $GITHUB_OUTPUT
+            echo "env_name=dev" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ steps.env.outputs.wif_provider }}
+          service_account: ${{ steps.env.outputs.sa_email }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Terraform Init
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ steps.env.outputs.state_bucket }}"
+
+      - name: Fetch secrets from Secret Manager
+        run: |
+          ENV_SUFFIX="${{ steps.env.outputs.env_name }}"
+          PROJECT="${{ steps.env.outputs.gcp_project }}"
+          
+          fetch_secret() {
+            local secret_name=$1
+            local tf_var_name=$2
+            local value=$(gcloud secrets versions access latest --secret="${secret_name}" --project="${PROJECT}" 2>/dev/null || echo "")
+            if [ -n "$value" ]; then
+              echo "::add-mask::$value"
+              echo "TF_VAR_${tf_var_name}=$value" >> $GITHUB_ENV
+            fi
+          }
+          
+          # Database passwords
+          fetch_secret "db-password-${ENV_SUFFIX}" "db_password"
+          fetch_secret "db-user-service-password-${ENV_SUFFIX}" "db_user_service_pwd"
+          fetch_secret "db-job-service-password-${ENV_SUFFIX}" "db_job_service_pwd"
+          fetch_secret "db-app-service-password-${ENV_SUFFIX}" "db_app_service_pwd"
+          fetch_secret "db-doc-service-password-${ENV_SUFFIX}" "db_doc_service_pwd"
+          fetch_secret "db-ai-service-password-${ENV_SUFFIX}" "db_ai_service_pwd"
+          fetch_secret "db-core-service-password-${ENV_SUFFIX}" "db_core_service_pwd"
+          fetch_secret "db-keycloak-service-password-${ENV_SUFFIX}" "db_keycloak_service_pwd"
+          
+          # Keycloak secrets
+          fetch_secret "keycloak-client-secret-${ENV_SUFFIX}" "keycloak_client_secret"
+          fetch_secret "keycloak-admin-password-${ENV_SUFFIX}" "keycloak_admin_password"
+          fetch_secret "keycloak-webhook-password-${ENV_SUFFIX}" "keycloak_webhook_password"
+
+      - name: Terraform Plan
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          terraform plan \
+            -var-file="${{ steps.env.outputs.tfvars_file }}" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          echo "==========================================="
+          echo "Applying Terraform - ${{ inputs.environment }}"
+          echo "==========================================="
+          echo "Project: ${{ steps.env.outputs.gcp_project }}"
+          echo "State:   gs://${{ steps.env.outputs.state_bucket }}"
+          echo "Trigger: ${{ github.event_name }}"
+          echo "Actor:   ${{ github.actor }}"
+          echo "==========================================="
+          
+          terraform apply -auto-approve tfplan
+
+      - name: Summary
+        run: |
+          echo "## Terraform Apply Complete ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | ${{ inputs.environment }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Project | ${{ steps.env.outputs.gcp_project }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered by | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY

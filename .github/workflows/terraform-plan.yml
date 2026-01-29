@@ -1,0 +1,184 @@
+name: Terraform Plan (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+        description: 'Target environment (dev or prod)'
+      terraform_dir:
+        type: string
+        default: 'terraform'
+        description: 'Path to Terraform directory'
+      terraform_version:
+        type: string
+        default: '1.5.7'
+
+jobs:
+  plan:
+    name: Plan (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set environment-specific variables
+        id: env
+        run: |
+          ENV="${{ inputs.environment }}"
+          
+          if [ "$ENV" == "prod" ] || [ "$ENV" == "production" ]; then
+            echo "gcp_project=${{ vars.GCP_PROJECT_ID_PROD }}" >> $GITHUB_OUTPUT
+            echo "state_bucket=${{ vars.TF_STATE_BUCKET_PROD }}" >> $GITHUB_OUTPUT
+            echo "wif_provider=${{ secrets.WORKLOAD_IDENTITY_PROVIDER_PROD }}" >> $GITHUB_OUTPUT
+            echo "sa_email=${{ secrets.SERVICE_ACCOUNT_EMAIL_PROD }}" >> $GITHUB_OUTPUT
+            echo "tfvars_file=environments/prod.tfvars" >> $GITHUB_OUTPUT
+            echo "env_name=prod" >> $GITHUB_OUTPUT
+          else
+            echo "gcp_project=${{ vars.GCP_PROJECT_ID_DEV }}" >> $GITHUB_OUTPUT
+            echo "state_bucket=${{ vars.TF_STATE_BUCKET_DEV }}" >> $GITHUB_OUTPUT
+            echo "wif_provider=${{ secrets.WORKLOAD_IDENTITY_PROVIDER_DEV }}" >> $GITHUB_OUTPUT
+            echo "sa_email=${{ secrets.SERVICE_ACCOUNT_EMAIL_DEV }}" >> $GITHUB_OUTPUT
+            echo "tfvars_file=environments/dev.tfvars" >> $GITHUB_OUTPUT
+            echo "env_name=dev" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ steps.env.outputs.wif_provider }}
+          service_account: ${{ steps.env.outputs.sa_email }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Terraform Format Check
+        id: fmt
+        working-directory: ${{ inputs.terraform_dir }}
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform Init
+        id: init
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ steps.env.outputs.state_bucket }}"
+
+      - name: Terraform Validate
+        id: validate
+        working-directory: ${{ inputs.terraform_dir }}
+        run: terraform validate -no-color
+
+      - name: Fetch secrets from Secret Manager
+        id: secrets
+        run: |
+          # Fetch all required secrets and set as TF_VAR_ environment variables
+          ENV_SUFFIX="${{ steps.env.outputs.env_name }}"
+          PROJECT="${{ steps.env.outputs.gcp_project }}"
+          
+          fetch_secret() {
+            local secret_name=$1
+            local tf_var_name=$2
+            local value=$(gcloud secrets versions access latest --secret="${secret_name}" --project="${PROJECT}" 2>/dev/null || echo "")
+            if [ -n "$value" ]; then
+              echo "::add-mask::$value"
+              echo "TF_VAR_${tf_var_name}=$value" >> $GITHUB_ENV
+              echo "✓ Fetched ${secret_name}"
+            else
+              echo "⚠ Secret ${secret_name} not found or empty"
+            fi
+          }
+          
+          # Database passwords
+          fetch_secret "db-password-${ENV_SUFFIX}" "db_password"
+          fetch_secret "db-user-service-password-${ENV_SUFFIX}" "db_user_service_pwd"
+          fetch_secret "db-job-service-password-${ENV_SUFFIX}" "db_job_service_pwd"
+          fetch_secret "db-app-service-password-${ENV_SUFFIX}" "db_app_service_pwd"
+          fetch_secret "db-doc-service-password-${ENV_SUFFIX}" "db_doc_service_pwd"
+          fetch_secret "db-ai-service-password-${ENV_SUFFIX}" "db_ai_service_pwd"
+          fetch_secret "db-core-service-password-${ENV_SUFFIX}" "db_core_service_pwd"
+          fetch_secret "db-keycloak-service-password-${ENV_SUFFIX}" "db_keycloak_service_pwd"
+          
+          # Keycloak secrets
+          fetch_secret "keycloak-client-secret-${ENV_SUFFIX}" "keycloak_client_secret"
+          fetch_secret "keycloak-admin-password-${ENV_SUFFIX}" "keycloak_admin_password"
+          fetch_secret "keycloak-webhook-password-${ENV_SUFFIX}" "keycloak_webhook_password"
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          terraform plan \
+            -var-file="${{ steps.env.outputs.tfvars_file }}" \
+            -no-color \
+            -out=tfplan \
+            2>&1 | tee plan_output.txt
+          
+          # Save plan output for PR comment (limit to 60KB for GitHub API)
+          echo "plan<<EOF" >> $GITHUB_OUTPUT
+          cat plan_output.txt | head -c 60000
+          echo "EOF" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Post Plan to PR
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const output = `### Terraform Plan - \`${{ inputs.environment }}\` 🏗️
+            
+            #### Format Check 🖌️ \`${{ steps.fmt.outcome }}\`
+            #### Initialization ⚙️ \`${{ steps.init.outcome }}\`
+            #### Validation 🤖 \`${{ steps.validate.outcome }}\`
+            #### Plan 📖 \`${{ steps.plan.outcome }}\`
+            
+            <details><summary>Show Plan Output</summary>
+            
+            \`\`\`terraform
+            ${{ steps.plan.outputs.plan }}
+            \`\`\`
+            
+            </details>
+            
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+            
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('Terraform Plan - `${{ inputs.environment }}`')
+            );
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: output
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: output
+              });
+            }
+
+      - name: Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1

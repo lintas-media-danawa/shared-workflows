@@ -1,0 +1,104 @@
+name: Terraform Security & Cost (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      terraform_dir:
+        type: string
+        default: 'terraform'
+      terraform_version:
+        type: string
+        default: '1.5.7'
+
+jobs:
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run tfsec
+        uses: aquasecurity/tfsec-pr-commenter-action@v1.3.1
+        with:
+          working_directory: ${{ inputs.terraform_dir }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          soft_fail_commenter: true
+
+  cost:
+    name: Cost Estimation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set environment-specific variables
+        id: env
+        run: |
+          ENV="${{ inputs.environment }}"
+          if [ "$ENV" == "prod" ] || [ "$ENV" == "production" ]; then
+            echo "gcp_project=${{ vars.GCP_PROJECT_ID_PROD }}" >> $GITHUB_OUTPUT
+            echo "state_bucket=${{ vars.TF_STATE_BUCKET_PROD }}" >> $GITHUB_OUTPUT
+            echo "wif_provider=${{ secrets.WORKLOAD_IDENTITY_PROVIDER_PROD }}" >> $GITHUB_OUTPUT
+            echo "sa_email=${{ secrets.SERVICE_ACCOUNT_EMAIL_PROD }}" >> $GITHUB_OUTPUT
+            echo "tfvars_file=environments/prod.tfvars" >> $GITHUB_OUTPUT
+            echo "env_name=prod" >> $GITHUB_OUTPUT
+          else
+            echo "gcp_project=${{ vars.GCP_PROJECT_ID_DEV }}" >> $GITHUB_OUTPUT
+            echo "state_bucket=${{ vars.TF_STATE_BUCKET_DEV }}" >> $GITHUB_OUTPUT
+            echo "wif_provider=${{ secrets.WORKLOAD_IDENTITY_PROVIDER_DEV }}" >> $GITHUB_OUTPUT
+            echo "sa_email=${{ secrets.SERVICE_ACCOUNT_EMAIL_DEV }}" >> $GITHUB_OUTPUT
+            echo "tfvars_file=environments/dev.tfvars" >> $GITHUB_OUTPUT
+            echo "env_name=dev" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ steps.env.outputs.wif_provider }}
+          service_account: ${{ steps.env.outputs.sa_email }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ steps.env.outputs.state_bucket }}"
+
+      - name: Setup Infracost
+        uses: infracost/actions/setup@v3
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      - name: Generate Infracost breakdown
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          infracost breakdown \
+            --path=. \
+            --terraform-var-file="${{ steps.env.outputs.tfvars_file }}" \
+            --format=json \
+            --out-file=/tmp/infracost.json
+
+      - name: Post Infracost comment
+        uses: infracost/actions/comment@v1
+        with:
+          path: /tmp/infracost.json
+          behavior: update
