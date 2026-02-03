@@ -149,6 +149,18 @@ jobs:
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ steps.env.outputs.region }}-docker.pkg.dev
 
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t ${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:${{ github.sha }} \
+            -t ${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:latest \
+            .
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:${{ github.sha }}
+          docker push ${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:latest
+
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
