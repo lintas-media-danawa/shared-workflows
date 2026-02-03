@@ -168,16 +168,17 @@ jobs:
             SECRETS_FLAG="${SECRETS_FLAG},${ADDITIONAL_SECRETS}"
           fi
           
-          # Build env vars
+          # Build env vars - use ^:^ delimiter to support commas in values
           ENV_VARS="GCP_PROJECT_ID=${{ steps.env.outputs.gcp_project }}"
-          ENV_VARS="${ENV_VARS},CLOUDSQL_CONNECTION=${{ steps.env.outputs.cloudsql }}"
-          ENV_VARS="${ENV_VARS},DB_NAME=${{ steps.env.outputs.db_name }}"
-          ENV_VARS="${ENV_VARS},DB_USER=${{ inputs.db-user }}"
+          ENV_VARS="${ENV_VARS}^:^CLOUDSQL_CONNECTION=${{ steps.env.outputs.cloudsql }}"
+          ENV_VARS="${ENV_VARS}^:^DB_NAME=${{ steps.env.outputs.db_name }}"
+          ENV_VARS="${ENV_VARS}^:^DB_USER=${{ inputs.db-user }}"
           if [ -n "${{ inputs.additional-env-vars }}" ]; then
-            # Remove backslash escapes from commas (not needed for gcloud)
+            # Replace commas with ^:^ delimiter and remove backslash escapes
             ADDITIONAL_ENV_VARS="${{ inputs.additional-env-vars }}"
-            ADDITIONAL_ENV_VARS="${ADDITIONAL_ENV_VARS//\\,/,}"
-            ENV_VARS="${ENV_VARS},${ADDITIONAL_ENV_VARS}"
+            ADDITIONAL_ENV_VARS="${ADDITIONAL_ENV_VARS//\\,/,}"  # Remove backslash escapes
+            ADDITIONAL_ENV_VARS="${ADDITIONAL_ENV_VARS//,/^:^}"   # Replace , with ^:^
+            ENV_VARS="${ENV_VARS}^:^${ADDITIONAL_ENV_VARS}"
           fi
           
           echo "==========================================="
