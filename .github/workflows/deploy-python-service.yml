@@ -175,7 +175,8 @@ jobs:
           ENV_VARS="${ENV_VARS},DB_USER=${{ inputs.db-user }}"
           if [ -n "${{ inputs.additional-env-vars }}" ]; then
             # Remove backslash escapes from commas (not needed for gcloud)
-            ADDITIONAL_ENV_VARS=$(echo "${{ inputs.additional-env-vars }}" | sed 's/\\,/,/g')
+            ADDITIONAL_ENV_VARS="${{ inputs.additional-env-vars }}"
+            ADDITIONAL_ENV_VARS="${ADDITIONAL_ENV_VARS//\\,/,}"
             ENV_VARS="${ENV_VARS},${ADDITIONAL_ENV_VARS}"
           fi
           
