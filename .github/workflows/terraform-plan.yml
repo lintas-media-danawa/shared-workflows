@@ -112,6 +112,9 @@ jobs:
           fetch_secret "keycloak-client-secret-${ENV_SUFFIX}" "keycloak_client_secret"
           fetch_secret "keycloak-admin-password-${ENV_SUFFIX}" "keycloak_admin_password"
           fetch_secret "keycloak-webhook-password-${ENV_SUFFIX}" "keycloak_webhook_password"
+          
+          # Frontend secrets
+          fetch_secret "nextauth-secret-${ENV_SUFFIX}" "nextauth_secret"
 
       - name: Terraform Plan
         id: plan
