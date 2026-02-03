@@ -108,6 +108,25 @@ jobs:
             echo "registry=${{ vars.ARTIFACT_REGISTRY_URL_DEV }}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Debug - Check secrets availability
+        run: |
+          echo "Environment: ${{ inputs.environment }}"
+          echo "WIF Provider DEV length: ${#WIF_DEV}"
+          echo "WIF Provider PROD length: ${#WIF_PROD}"
+          echo "SA Email DEV length: ${#SA_DEV}"
+          echo "SA Email PROD length: ${#SA_PROD}"
+          if [ -z "$WIF_DEV" ]; then
+            echo "ERROR: WORKLOAD_IDENTITY_PROVIDER_DEV is empty!"
+          fi
+          if [ -z "$SA_DEV" ]; then
+            echo "ERROR: SERVICE_ACCOUNT_EMAIL_DEV is empty!"
+          fi
+        env:
+          WIF_DEV: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER_DEV }}
+          WIF_PROD: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER_PROD }}
+          SA_DEV: ${{ secrets.SERVICE_ACCOUNT_EMAIL_DEV }}
+          SA_PROD: ${{ secrets.SERVICE_ACCOUNT_EMAIL_PROD }}
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -119,59 +138,6 @@ jobs:
 
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ steps.env.outputs.region }}-docker.pkg.dev
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:${{ github.sha }}
-            ${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:${{ inputs.environment }}-latest
-          cache-from: type=registry,ref=${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:buildcache
-          cache-to: type=registry,ref=${{ steps.env.outputs.registry }}/${{ inputs.service-name }}:buildcache,mode=max
-
-  deploy:
-    name: Deploy to Cloud Run (${{ inputs.environment }})
-    needs: [build-and-push]
-    if: always() && needs.build-and-push.result == 'success'
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.environment == 'prod' && 'production' || 'dev' }}
-
-    steps:
-      - name: Set environment-specific variables
-        id: env
-        run: |
-          ENV="${{ inputs.environment }}"
-          
-          if [ "$ENV" == "prod" ]; then
-            echo "gcp_project=${{ vars.GCP_PROJECT_ID_PROD }}" >> $GITHUB_OUTPUT
-            echo "region=${{ vars.GCP_REGION_PROD }}" >> $GITHUB_OUTPUT
-            echo "registry=${{ vars.ARTIFACT_REGISTRY_URL_PROD }}" >> $GITHUB_OUTPUT
-            echo "vpc_connector=${{ vars.VPC_CONNECTOR_PROD }}" >> $GITHUB_OUTPUT
-            echo "cloudsql=${{ vars.CLOUDSQL_CONNECTION_PROD }}" >> $GITHUB_OUTPUT
-            echo "db_name=${{ vars.DB_NAME_PROD }}" >> $GITHUB_OUTPUT
-            echo "min_instances=1" >> $GITHUB_OUTPUT
-            echo "env_suffix=production" >> $GITHUB_OUTPUT
-          else
-            echo "gcp_project=${{ vars.GCP_PROJECT_ID_DEV }}" >> $GITHUB_OUTPUT
-            echo "region=${{ vars.GCP_REGION_DEV }}" >> $GITHUB_OUTPUT
-            echo "registry=${{ vars.ARTIFACT_REGISTRY_URL_DEV }}" >> $GITHUB_OUTPUT
-            echo "vpc_connector=${{ vars.VPC_CONNECTOR_DEV }}" >> $GITHUB_OUTPUT
-            echo "cloudsql=${{ vars.CLOUDSQL_CONNECTION_DEV }}" >> $GITHUB_OUTPUT
-            echo "db_name=${{ vars.DB_NAME_DEV }}" >> $GITHUB_OUTPUT
-            echo "min_instances=${{ inputs.min-instances }}" >> $GITHUB_OUTPUT
-            echo "env_suffix=dev" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ inputs.environment == 'prod' && secrets.WORKLOAD_IDENTITY_PROVIDER_PROD || secrets.WORKLOAD_IDENTITY_PROVIDER_DEV }}
-          service_account: ${{ inputs.environment == 'prod' && secrets.SERVICE_ACCOUNT_EMAIL_PROD || secrets.SERVICE_ACCOUNT_EMAIL_DEV }}
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
