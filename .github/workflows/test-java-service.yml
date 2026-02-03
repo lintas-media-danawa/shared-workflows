@@ -51,6 +51,7 @@ jobs:
       - name: Run tests
         run: mvn -B clean test
         env:
+          GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
 
       - name: Generate test coverage report
@@ -101,11 +102,13 @@ jobs:
       - name: Run code quality checks
         run: mvn -B verify -DskipTests
         env:
+          GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
 
       - name: Check for compilation warnings
         run: mvn -B clean compile -Dmaven.compiler.showWarnings=true
         env:
+          GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
 
   build-verification:
@@ -131,6 +134,7 @@ jobs:
       - name: Build without tests
         run: mvn -B clean package -DskipTests
         env:
+          GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
 
       - name: Verify JAR was created
