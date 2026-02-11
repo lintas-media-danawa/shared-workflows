@@ -166,6 +166,7 @@ jobs:
             echo "vpc_connector=${{ vars.VPC_CONNECTOR_PROD }}" >> $GITHUB_OUTPUT
             echo "cloudsql=${{ vars.CLOUDSQL_CONNECTION_PROD }}" >> $GITHUB_OUTPUT
             echo "db_name=${{ vars.DB_NAME_PROD }}" >> $GITHUB_OUTPUT
+            echo "user_service_url=${{ vars.USER_SERVICE_URL_PROD }}" >> $GITHUB_OUTPUT
             echo "min_instances=1" >> $GITHUB_OUTPUT
             echo "env_suffix=production" >> $GITHUB_OUTPUT
           else
@@ -175,6 +176,7 @@ jobs:
             echo "vpc_connector=${{ vars.VPC_CONNECTOR_DEV }}" >> $GITHUB_OUTPUT
             echo "cloudsql=${{ vars.CLOUDSQL_CONNECTION_DEV }}" >> $GITHUB_OUTPUT
             echo "db_name=${{ vars.DB_NAME_DEV }}" >> $GITHUB_OUTPUT
+            echo "user_service_url=${{ vars.USER_SERVICE_URL_DEV }}" >> $GITHUB_OUTPUT
             echo "min_instances=${{ inputs.min-instances }}" >> $GITHUB_OUTPUT
             echo "env_suffix=dev" >> $GITHUB_OUTPUT
           fi
@@ -210,6 +212,9 @@ jobs:
           ENV_VARS="${ENV_VARS},DB_NAME=${{ steps.env.outputs.db_name }}"
           ENV_VARS="${ENV_VARS},DB_USER=${{ inputs.db-user }}"
           ENV_VARS="${ENV_VARS},DB_POOL_SIZE=5"
+          if [ -n "${{ steps.env.outputs.user_service_url }}" ]; then
+            ENV_VARS="${ENV_VARS},USER_SERVICE_URL=${{ steps.env.outputs.user_service_url }}"
+          fi
           if [ -n "${{ inputs.additional-env-vars }}" ]; then
             ENV_VARS="${ENV_VARS},${{ inputs.additional-env-vars }}"
           fi
