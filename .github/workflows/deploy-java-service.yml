@@ -37,7 +37,7 @@ on:
       additional-env-vars:
         type: string
         default: ''
-        description: 'Additional env vars in format: KEY1=value1,KEY2=value2'
+        description: 'Additional env vars in format: KEY1=value1,KEY2=value2 (use {env} as placeholder for environment suffix)'
       additional-secrets:
         type: string
         default: ''
@@ -216,7 +216,9 @@ jobs:
             ENV_VARS="${ENV_VARS},USER_SERVICE_URL=${{ steps.env.outputs.user_service_url }}"
           fi
           if [ -n "${{ inputs.additional-env-vars }}" ]; then
-            ENV_VARS="${ENV_VARS},${{ inputs.additional-env-vars }}"
+            # Replace {env} placeholder with actual environment suffix
+            ADDITIONAL_ENV_VARS=$(echo "${{ inputs.additional-env-vars }}" | sed "s/{env}/${{ steps.env.outputs.env_suffix }}/g")
+            ENV_VARS="${ENV_VARS},${ADDITIONAL_ENV_VARS}"
           fi
           
           echo "==========================================="
