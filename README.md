@@ -134,6 +134,7 @@ Set these at the organization or repository level:
 - `DB_NAME_DEV` - Database name (e.g., `jossdb`)
 - `USER_SERVICE_URL_DEV` - User service URL (e.g., `https://user-service-e4ddn6o4sq-as.a.run.app`)
 - `CORE_SERVICE_URL_DEV` - Core service URL (e.g., `https://core-service-e4ddn6o4sq-as.a.run.app`)
+- `APPLICATION_SERVICE_URL_DEV` - Application service URL (e.g., `https://application-service-e4ddn6o4sq-as.a.run.app`)
 
 **PROD Environment:**
 - `GCP_PROJECT_ID_PROD` - GCP project ID (e.g., `joss-lmd`)
@@ -144,6 +145,7 @@ Set these at the organization or repository level:
 - `DB_NAME_PROD` - Database name (e.g., `jossdb`)
 - `USER_SERVICE_URL_PROD` - User service URL (e.g., `https://user-service-iujdf4jimq-as.a.run.app`)
 - `CORE_SERVICE_URL_PROD` - Core service URL (e.g., `https://core-service-iujdf4jimq-as.a.run.app`)
+- `APPLICATION_SERVICE_URL_PROD` - Application service URL (e.g., `https://application-service-iujdf4jimq-as.a.run.app`)
 
 ### Required GitHub Secrets
 

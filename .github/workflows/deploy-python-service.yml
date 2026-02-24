@@ -104,18 +104,22 @@ jobs:
             echo "registry=${{ vars.ARTIFACT_REGISTRY_URL_PROD }}" >> $GITHUB_OUTPUT
             echo "env_suffix=prod" >> $GITHUB_OUTPUT
             echo "vpc_connector=${{ vars.VPC_CONNECTOR_PROD }}" >> $GITHUB_OUTPUT
-            echo "cloudsql=${{ vars.CLOUDSQL_INSTANCE_PROD }}" >> $GITHUB_OUTPUT
+            echo "cloudsql=${{ vars.CLOUDSQL_CONNECTION_PROD }}" >> $GITHUB_OUTPUT
             echo "db_name=${{ vars.DB_NAME_PROD }}" >> $GITHUB_OUTPUT
             echo "min_instances=${{ vars.MIN_INSTANCES_PROD || '1' }}" >> $GITHUB_OUTPUT
+            echo "user_service_url=${{ vars.USER_SERVICE_URL_PROD }}" >> $GITHUB_OUTPUT
+            echo "application_service_url=${{ vars.APPLICATION_SERVICE_URL_PROD }}" >> $GITHUB_OUTPUT
           else
             echo "gcp_project=${{ vars.GCP_PROJECT_ID_DEV }}" >> $GITHUB_OUTPUT
             echo "region=${{ vars.GCP_REGION_DEV }}" >> $GITHUB_OUTPUT
             echo "registry=${{ vars.ARTIFACT_REGISTRY_URL_DEV }}" >> $GITHUB_OUTPUT
             echo "env_suffix=dev" >> $GITHUB_OUTPUT
             echo "vpc_connector=${{ vars.VPC_CONNECTOR_DEV }}" >> $GITHUB_OUTPUT
-            echo "cloudsql=${{ vars.CLOUDSQL_INSTANCE_DEV }}" >> $GITHUB_OUTPUT
+            echo "cloudsql=${{ vars.CLOUDSQL_CONNECTION_DEV }}" >> $GITHUB_OUTPUT
             echo "db_name=${{ vars.DB_NAME_DEV }}" >> $GITHUB_OUTPUT
             echo "min_instances=${{ vars.MIN_INSTANCES_DEV || '0' }}" >> $GITHUB_OUTPUT
+            echo "user_service_url=${{ vars.USER_SERVICE_URL_DEV }}" >> $GITHUB_OUTPUT
+            echo "application_service_url=${{ vars.APPLICATION_SERVICE_URL_DEV }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Debug - Check secrets availability
@@ -185,6 +189,12 @@ jobs:
           ENV_VARS="${ENV_VARS}^:^CLOUDSQL_CONNECTION=${{ steps.env.outputs.cloudsql }}"
           ENV_VARS="${ENV_VARS}^:^DB_NAME=${{ steps.env.outputs.db_name }}"
           ENV_VARS="${ENV_VARS}^:^DB_USER=${{ inputs.db-user }}"
+          if [ -n "${{ steps.env.outputs.user_service_url }}" ]; then
+            ENV_VARS="${ENV_VARS}^:^USER_SERVICE_URL=${{ steps.env.outputs.user_service_url }}"
+          fi
+          if [ -n "${{ steps.env.outputs.application_service_url }}" ]; then
+            ENV_VARS="${ENV_VARS}^:^APPLICATION_SERVICE_URL=${{ steps.env.outputs.application_service_url }}"
+          fi
           if [ -n "${{ inputs.additional-env-vars }}" ]; then
             # Replace commas with ^:^ delimiter and remove backslash escapes
             ADDITIONAL_ENV_VARS="${{ inputs.additional-env-vars }}"
@@ -211,7 +221,7 @@ jobs:
             --service-account ${SERVICE_ACCOUNT} \
             --vpc-connector ${{ steps.env.outputs.vpc_connector }} \
             --vpc-egress private-ranges-only \
-            --add-cloudsql-instances ${{ steps.env.outputs.cloudsql }} \
+            --set-cloudsql-instances ${{ steps.env.outputs.cloudsql }} \
             --cpu ${{ inputs.cpu }} \
             --memory ${{ inputs.memory }} \
             --min-instances ${{ steps.env.outputs.min_instances }} \

@@ -244,7 +244,7 @@ jobs:
             --service-account ${SERVICE_ACCOUNT} \
             --vpc-connector ${{ steps.env.outputs.vpc_connector }} \
             --vpc-egress private-ranges-only \
-            --add-cloudsql-instances ${{ steps.env.outputs.cloudsql }} \
+            --set-cloudsql-instances ${{ steps.env.outputs.cloudsql }} \
             --cpu ${{ inputs.cpu }} \
             --memory ${{ inputs.memory }} \
             --min-instances ${{ steps.env.outputs.min_instances }} \
