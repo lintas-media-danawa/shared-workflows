@@ -164,7 +164,7 @@ jobs:
             echo "region=${{ vars.GCP_REGION_PROD }}" >> $GITHUB_OUTPUT
             echo "registry=${{ vars.ARTIFACT_REGISTRY_URL_PROD }}" >> $GITHUB_OUTPUT
             echo "min_instances=1" >> $GITHUB_OUTPUT
-            echo "env_suffix=production" >> $GITHUB_OUTPUT
+            echo "env_suffix=prod" >> $GITHUB_OUTPUT
           else
             echo "gcp_project=${{ vars.GCP_PROJECT_ID_DEV }}" >> $GITHUB_OUTPUT
             echo "region=${{ vars.GCP_REGION_DEV }}" >> $GITHUB_OUTPUT
