@@ -126,28 +126,40 @@ jobs:
 Set these at the organization or repository level:
 
 **DEV Environment:**
-- `GCP_PROJECT_ID_DEV`
-- `GCP_REGION_DEV`
-- `ARTIFACT_REGISTRY_URL_DEV`
-- `VPC_CONNECTOR_DEV`
-- `CLOUDSQL_CONNECTION_DEV`
-- `DB_NAME_DEV`
+- `GCP_PROJECT_ID_DEV` - GCP project ID (e.g., `joss-mvp`)
+- `GCP_REGION_DEV` - GCP region (e.g., `asia-southeast1`)
+- `ARTIFACT_REGISTRY_URL_DEV` - Artifact Registry URL (e.g., `asia-southeast1-docker.pkg.dev/joss-mvp/joss-dev`)
+- `VPC_CONNECTOR_DEV` - VPC connector name (e.g., `joss-vpc-dev`)
+- `CLOUDSQL_CONNECTION_DEV` - CloudSQL connection string (e.g., `joss-mvp:asia-southeast1:joss-dev-6590c067`)
+- `DB_NAME_DEV` - Database name (e.g., `jossdb`)
+- `USER_SERVICE_URL_DEV` - User service URL (e.g., `https://user-service-e4ddn6o4sq-as.a.run.app`)
 
 **PROD Environment:**
-- `GCP_PROJECT_ID_PROD`
-- `GCP_REGION_PROD`
-- `ARTIFACT_REGISTRY_URL_PROD`
-- `VPC_CONNECTOR_PROD`
-- `CLOUDSQL_CONNECTION_PROD`
-- `DB_NAME_PROD`
+- `GCP_PROJECT_ID_PROD` - GCP project ID (e.g., `joss-lmd`)
+- `GCP_REGION_PROD` - GCP region (e.g., `asia-southeast1`)
+- `ARTIFACT_REGISTRY_URL_PROD` - Artifact Registry URL (e.g., `asia-southeast1-docker.pkg.dev/joss-lmd/joss-prod`)
+- `VPC_CONNECTOR_PROD` - VPC connector name (e.g., `joss-vpc-prod`)
+- `CLOUDSQL_CONNECTION_PROD` - CloudSQL connection string (e.g., `joss-lmd:asia-southeast1:joss-prod-ee893f3e`)
+- `DB_NAME_PROD` - Database name (e.g., `jossdb`)
+- `USER_SERVICE_URL_PROD` - User service URL (e.g., `https://user-service-iujdf4jimq-as.a.run.app`)
 
 ### Required GitHub Secrets
 
-- `WORKLOAD_IDENTITY_PROVIDER_DEV`
-- `WORKLOAD_IDENTITY_PROVIDER_PROD`
-- `SERVICE_ACCOUNT_EMAIL_DEV`
-- `SERVICE_ACCOUNT_EMAIL_PROD`
-- `PAT_TOKEN` (for shared-lib repository access)
+- `WORKLOAD_IDENTITY_PROVIDER_DEV` - Workload Identity Provider for dev
+- `WORKLOAD_IDENTITY_PROVIDER_PROD` - Workload Identity Provider for prod
+- `SERVICE_ACCOUNT_EMAIL_DEV` - Service account email for dev deployments
+- `SERVICE_ACCOUNT_EMAIL_PROD` - Service account email for prod deployments
+- `PAT_TOKEN` - Personal Access Token for shared-lib repository access
+
+### Terraform-Specific Variables
+
+For `terraform-apply.yml` and `terraform-plan.yml` workflows:
+
+**DEV Environment:**
+- `TF_STATE_BUCKET_DEV` - Terraform state bucket (e.g., `joss-mvp-terraform-state`)
+
+**PROD Environment:**
+- `TF_STATE_BUCKET_PROD` - Terraform state bucket (e.g., `joss-lmd-terraform-state`)
 
 ### GitHub Environments
 
