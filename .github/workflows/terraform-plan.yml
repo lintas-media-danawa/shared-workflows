@@ -113,6 +113,9 @@ jobs:
           fetch_secret "keycloak-admin-password-${ENV_SUFFIX}" "keycloak_admin_password"
           fetch_secret "keycloak-webhook-password-${ENV_SUFFIX}" "keycloak_webhook_password"
           
+          # Notification Service secrets
+          fetch_secret "db-notification-service-password-${ENV_SUFFIX}" "db_notification_service_pwd"
+          
           # Frontend secrets
           fetch_secret "nextauth-secret-${ENV_SUFFIX}" "nextauth_secret"
 
