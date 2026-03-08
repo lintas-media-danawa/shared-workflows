@@ -17,6 +17,10 @@ on:
         type: boolean
         default: false
         description: 'Auto-approve apply (use with caution for prod)'
+      force_unlock_id:
+        type: string
+        default: ''
+        description: 'Lock ID to force unlock before apply (leave empty to skip)'
 
 jobs:
   apply:
@@ -82,6 +86,13 @@ jobs:
         run: |
           terraform init \
             -backend-config="bucket=${{ steps.env.outputs.state_bucket }}"
+
+      - name: Force unlock state
+        if: inputs.force_unlock_id != ''
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          echo "Force unlocking state with ID: ${{ inputs.force_unlock_id }}"
+          terraform force-unlock -force "${{ inputs.force_unlock_id }}"
 
       - name: Fetch secrets from Secret Manager
         run: |
