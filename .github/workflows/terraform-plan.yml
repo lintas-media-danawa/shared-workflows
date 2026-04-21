@@ -119,6 +119,10 @@ jobs:
           # Frontend secrets
           fetch_secret "nextauth-secret-${ENV_SUFFIX}" "nextauth_secret"
 
+          # Self-managed DB/ES optional secrets
+          fetch_secret "db-es-postgres-password-${ENV_SUFFIX}" "db_es_postgres_password"
+          fetch_secret "db-es-elastic-password-${ENV_SUFFIX}" "db_es_elastic_password"
+
       - name: Terraform Plan
         id: plan
         working-directory: ${{ inputs.terraform_dir }}
