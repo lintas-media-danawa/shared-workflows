@@ -136,20 +136,19 @@ jobs:
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev
 
-      - name: Build Docker image
-        run: |
-          docker build \
-            -t ${{ vars.ARTIFACT_REGISTRY_URL }}/${{ inputs.service-name }}:${{ github.sha }} \
-            -t ${{ vars.ARTIFACT_REGISTRY_URL }}/${{ inputs.service-name }}:latest \
-            .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Push Docker image
-        run: |
-          docker push ${{ vars.ARTIFACT_REGISTRY_URL }}/${{ inputs.service-name }}:${{ github.sha }}
-          docker push ${{ vars.ARTIFACT_REGISTRY_URL }}/${{ inputs.service-name }}:latest
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ vars.ARTIFACT_REGISTRY_URL }}/${{ inputs.service-name }}:${{ github.sha }}
+            ${{ vars.ARTIFACT_REGISTRY_URL }}/${{ inputs.service-name }}:${{ inputs.environment }}-latest
+          cache-from: type=registry,ref=${{ vars.ARTIFACT_REGISTRY_URL }}/${{ inputs.service-name }}:buildcache
+          cache-to: type=registry,ref=${{ vars.ARTIFACT_REGISTRY_URL }}/${{ inputs.service-name }}:buildcache,mode=max
 
       - name: Deploy to Cloud Run
         run: |
@@ -169,7 +168,11 @@ jobs:
           
           # Build env vars - use ^:^ delimiter to support commas in values
           ENV_VARS="GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}"
-          ENV_VARS="${ENV_VARS}^:^CLOUDSQL_CONNECTION=${{ vars.CLOUDSQL_CONNECTION }}"
+          if [ -n "${{ vars.DB_HOST }}" ]; then
+            ENV_VARS="${ENV_VARS}^:^DB_HOST=${{ vars.DB_HOST }}"
+          else
+            ENV_VARS="${ENV_VARS}^:^CLOUDSQL_CONNECTION=${{ vars.CLOUDSQL_CONNECTION }}"
+          fi
           ENV_VARS="${ENV_VARS}^:^DB_NAME=${{ vars.DB_NAME }}"
           ENV_VARS="${ENV_VARS}^:^DB_USER=${{ inputs.db-user }}"
           if [ -n "${{ vars.USER_SERVICE_URL }}" ]; then
@@ -214,6 +217,14 @@ jobs:
           echo "Image:           ${{ vars.ARTIFACT_REGISTRY_URL }}/${{ inputs.service-name }}:${{ github.sha }}"
           echo "==========================================="
           
+          # Build Cloud SQL flag (skip if using self-managed DB)
+          CLOUDSQL_FLAG=""
+          if [ -z "${{ vars.DB_HOST }}" ] && [ -n "${{ vars.CLOUDSQL_CONNECTION }}" ]; then
+            CLOUDSQL_FLAG="--set-cloudsql-instances ${{ vars.CLOUDSQL_CONNECTION }}"
+          else
+            CLOUDSQL_FLAG="--clear-cloudsql-instances"
+          fi
+
           gcloud run deploy ${{ inputs.service-name }} \
             --image ${{ vars.ARTIFACT_REGISTRY_URL }}/${{ inputs.service-name }}:${{ github.sha }} \
             --region ${{ vars.GCP_REGION }} \
@@ -222,7 +233,7 @@ jobs:
             --service-account ${SERVICE_ACCOUNT} \
             --vpc-connector ${{ vars.VPC_CONNECTOR }} \
             --vpc-egress private-ranges-only \
-            --set-cloudsql-instances ${{ vars.CLOUDSQL_CONNECTION }} \
+            ${CLOUDSQL_FLAG} \
             --cpu ${{ inputs.cpu }} \
             --memory ${{ inputs.memory }} \
             --min-instances ${MIN_INSTANCES} \
