@@ -179,7 +179,11 @@ jobs:
           
           # Build env vars
           ENV_VARS="GCP_PROJECT_ID=${{ vars.GCP_PROJECT_ID }}"
-          ENV_VARS="${ENV_VARS},CLOUD_SQL_INSTANCE=${{ vars.CLOUDSQL_CONNECTION }}"
+          if [ -n "${{ vars.DB_HOST }}" ]; then
+            ENV_VARS="${ENV_VARS},DB_HOST=${{ vars.DB_HOST }}"
+          else
+            ENV_VARS="${ENV_VARS},CLOUD_SQL_INSTANCE=${{ vars.CLOUDSQL_CONNECTION }}"
+          fi
           ENV_VARS="${ENV_VARS},DB_NAME=${{ vars.DB_NAME }}"
           ENV_VARS="${ENV_VARS},DB_USER=${{ inputs.db-user }}"
           ENV_VARS="${ENV_VARS},DB_POOL_SIZE=5"
@@ -211,6 +215,14 @@ jobs:
           echo "Image:           ${{ vars.ARTIFACT_REGISTRY_URL }}/${{ inputs.service-name }}:${{ github.sha }}"
           echo "==========================================="
           
+          # Build Cloud SQL flag (skip if using self-managed DB)
+          CLOUDSQL_FLAG=""
+          if [ -z "${{ vars.DB_HOST }}" ] && [ -n "${{ vars.CLOUDSQL_CONNECTION }}" ]; then
+            CLOUDSQL_FLAG="--set-cloudsql-instances ${{ vars.CLOUDSQL_CONNECTION }}"
+          else
+            CLOUDSQL_FLAG="--clear-cloudsql-instances"
+          fi
+
           gcloud run deploy ${{ inputs.service-name }} \
             --image ${{ vars.ARTIFACT_REGISTRY_URL }}/${{ inputs.service-name }}:${{ github.sha }} \
             --region ${{ vars.GCP_REGION }} \
@@ -219,7 +231,7 @@ jobs:
             --service-account ${SERVICE_ACCOUNT} \
             --vpc-connector ${{ vars.VPC_CONNECTOR }} \
             --vpc-egress private-ranges-only \
-            --set-cloudsql-instances ${{ vars.CLOUDSQL_CONNECTION }} \
+            ${CLOUDSQL_FLAG} \
             --cpu ${{ inputs.cpu }} \
             --memory ${{ inputs.memory }} \
             --min-instances ${MIN_INSTANCES} \
