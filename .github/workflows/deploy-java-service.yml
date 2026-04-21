@@ -193,6 +193,9 @@ jobs:
           if [ -n "${{ vars.CORE_SERVICE_URL }}" ]; then
             ENV_VARS="${ENV_VARS},CORE_SERVICE_URL=${{ vars.CORE_SERVICE_URL }}"
           fi
+          if [ -n "${{ vars.ELASTICSEARCH_URL }}" ]; then
+            ENV_VARS="${ENV_VARS},ELASTICSEARCH_URL=${{ vars.ELASTICSEARCH_URL }}"
+          fi
           if [ -n "${{ inputs.additional-env-vars }}" ]; then
             # Replace {env} placeholder with actual environment suffix
             ADDITIONAL_ENV_VARS=$(echo "${{ inputs.additional-env-vars }}" | sed "s/{env}/${{ steps.env.outputs.env_suffix }}/g")
