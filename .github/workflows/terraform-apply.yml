@@ -21,6 +21,10 @@ on:
         type: string
         default: ''
         description: 'Lock ID to force unlock before apply (leave empty to skip)'
+      state_rm_targets:
+        type: string
+        default: ''
+        description: 'Comma-separated list of resources to remove from state before plan (e.g., module.cloudsql)'
 
 jobs:
   apply:
@@ -93,6 +97,17 @@ jobs:
         run: |
           echo "Force unlocking state with ID: ${{ inputs.force_unlock_id }}"
           terraform force-unlock -force "${{ inputs.force_unlock_id }}"
+
+      - name: Remove resources from state
+        if: inputs.state_rm_targets != ''
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          IFS=',' read -ra TARGETS <<< "${{ inputs.state_rm_targets }}"
+          for target in "${TARGETS[@]}"; do
+            target=$(echo "$target" | xargs)
+            echo "Removing $target from state..."
+            terraform state rm "$target" || echo "Warning: $target not found in state, skipping"
+          done
 
       - name: Fetch secrets from Secret Manager
         run: |
