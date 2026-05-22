@@ -25,6 +25,10 @@ on:
         type: string
         default: ''
         description: 'Comma-separated list of resources to remove from state before plan (e.g., module.cloudsql)'
+      state_import:
+        type: string
+        default: ''
+        description: 'Comma-separated import pairs as address=id (e.g., module.foo.google_compute_instance.main=projects/p/zones/z/instances/name)'
 
 jobs:
   apply:
@@ -148,6 +152,21 @@ jobs:
           # Self-managed DB/ES optional secrets
           fetch_secret "db-es-postgres-password-${ENV_SUFFIX}" "db_es_postgres_password"
           fetch_secret "db-es-elastic-password-${ENV_SUFFIX}" "db_es_elastic_password"
+
+      - name: Import resources into state
+        if: inputs.state_import != ''
+        working-directory: ${{ inputs.terraform_dir }}
+        run: |
+          IFS=',' read -ra PAIRS <<< "${{ inputs.state_import }}"
+          for pair in "${PAIRS[@]}"; do
+            pair=$(echo "$pair" | xargs)
+            ADDRESS="${pair%%=*}"
+            ID="${pair#*=}"
+            echo "Importing $ADDRESS ($ID)..."
+            terraform import \
+              -var-file="${{ steps.env.outputs.tfvars_file }}" \
+              "$ADDRESS" "$ID" || echo "Warning: import of $ADDRESS failed, may already exist in state"
+          done
 
       - name: Terraform Plan
         working-directory: ${{ inputs.terraform_dir }}
