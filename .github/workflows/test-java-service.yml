@@ -155,8 +155,6 @@ jobs:
       - name: Build Docker image (verification only)
         run: |
           docker build \
-            --build-arg GITHUB_ACTOR=${{ github.actor }} \
-            --build-arg GITHUB_TOKEN=${{ secrets.PAT_TOKEN }} \
             -t ${{ inputs.service-name }}:test \
             .
           echo "✅ Docker image built successfully"
