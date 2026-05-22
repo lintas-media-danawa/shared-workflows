@@ -149,9 +149,6 @@ jobs:
           echo "✅ JAR file created successfully"
           ls -lh "$JAR_FILE"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Build Docker image (verification only)
         run: |
           docker build \
