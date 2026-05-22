@@ -124,14 +124,9 @@ jobs:
         with:
           context: .
           push: true
-          build-args: |
-            GITHUB_ACTOR=${{ github.actor }}
-            GITHUB_TOKEN=${{ secrets.PAT_TOKEN }}
           tags: |
             ${{ vars.ARTIFACT_REGISTRY_URL }}/${{ inputs.service-name }}:${{ github.sha }}
             ${{ vars.ARTIFACT_REGISTRY_URL }}/${{ inputs.service-name }}:${{ inputs.environment }}-latest
-          cache-from: type=registry,ref=${{ vars.ARTIFACT_REGISTRY_URL }}/${{ inputs.service-name }}:buildcache
-          cache-to: type=registry,ref=${{ vars.ARTIFACT_REGISTRY_URL }}/${{ inputs.service-name }}:buildcache,mode=max
 
   deploy:
     name: Deploy to Cloud Run (${{ inputs.environment }})
