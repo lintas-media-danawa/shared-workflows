@@ -8,6 +8,10 @@ Reusable GitHub Actions workflows for JOSS microservices deployment.
 
 Reusable workflow for deploying Java (Spring Boot) microservices to Google Cloud Run.
 
+### `deploy-cloud-run-image.yml`
+
+Reusable workflow that builds any repo's Dockerfile, pushes the image tagged by commit, and points an existing Cloud Run service at it. It changes **only the image**. The rest of the service is Terraform's (e.g. shared-terraform's `cloud-run-service` module), so a deploy never drifts from a plan. See [Deploying an image to a Terraform-managed service](#deploying-an-image-to-a-terraform-managed-service).
+
 ## Usage
 
 ### Basic Example (core-service)
@@ -171,6 +175,73 @@ Create these environments in each service repository:
 
 1. **`dev`** - No protection rules
 2. **`production`** - Enable "Required reviewers" and add approvers
+
+## Deploying an image to a Terraform-managed service
+
+`deploy-cloud-run-image.yml` is for services whose Cloud Run config lives in Terraform (sso-keycloak, openfga). Unlike `deploy-java-service.yml`, it never sets env vars, secrets, scaling, VPC or IAM; it only runs `gcloud run deploy --image`.
+
+It assumes trunk-based releases: a push to `main` deploys dev, and a `v*` tag, made by release-please, deploys prod.
+
+```yaml
+# .github/workflows/deploy.yml in a consuming repo
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths: ['src/**', '.github/workflows/deploy.yml'] # a tag push ignores paths
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    uses: lintas-media-danawa/shared-workflows/.github/workflows/deploy-cloud-run-image.yml@<commit SHA>
+    permissions: { contents: read, id-token: write }
+    with:
+      environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'prod' || 'dev' }}
+      service: myapp-${{ startsWith(github.ref, 'refs/tags/v') && 'prod' || 'dev' }}
+      repository: myapp-${{ startsWith(github.ref, 'refs/tags/v') && 'prod' || 'dev' }}
+      image: myapp
+      region: asia-southeast1
+      context: src
+      dockerfile: src/Dockerfile
+    secrets: inherit
+
+  # Repo-specific steps after a deploy (e.g. a migration) go in their own
+  # job, reading needs.deploy.outputs.image / project_id.
+```
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `environment` | Yes | - | GitHub environment holding the WIF secrets (`dev`/`prod`) |
+| `service` | Yes | - | Cloud Run service to deploy to |
+| `region` | Yes | - | Region of the service and its Artifact Registry repository |
+| `repository` | Yes | - | Artifact Registry repository the image is pushed to |
+| `image` | Yes | - | Image name inside the repository |
+| `context` | No | `.` | Docker build context |
+| `dockerfile` | No | `Dockerfile` | Dockerfile path, relative to the repo root |
+| `project_id` | No | `''` | GCP project; empty reads `project_id` from `var_file` |
+| `var_file` | No | `terraform/environments/<environment>.tfvars` | tfvars file the project is read from |
+| `release_branch` | No | `main` | Branch a tag's commit must be on before it deploys |
+| `runs_on` | No | `ubuntu-latest` | Runner label |
+
+Outputs: `image`, the full reference deployed (`...:<sha>`), and `project_id`.
+
+**Setting it up in the consuming repo**
+
+- **GitHub environments:** `dev` accepts only the `main` branch, and `prod` only `v*` tags. Set this under Settings → Environments → Deployment branches and tags.
+- **Secrets:** each environment holds `WORKLOAD_IDENTITY_PROVIDER` and `SERVICE_ACCOUNT_EMAIL`, under the same names in both, not with `_DEV`/`_PROD` suffixes.
+- **Project:** read from the repo's own tfvars, so there are no project or registry variables to keep in sync.
+
+**Guards**
+
+- **Bootstrap check:** fails early when the environment's WIF secrets are empty.
+- **Release tag check:** fails on a tag whose commit isn't on `main`, so prod only runs a commit that already went through dev.
+- **One rollout at a time:** one per environment and service, and a newer run waits instead of cancelling a deploy halfway.
+
+**Pinning**
+
+This repo has no release tags, so pin a commit SHA rather than `@main`. The workflow receives the deploy identity, so a change on `main` would otherwise reach every repo's deploy immediately.
 
 ## Naming Conventions
 
