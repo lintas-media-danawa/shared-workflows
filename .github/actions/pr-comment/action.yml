@@ -1,0 +1,69 @@
+name: PR comment
+description: Post a check's step outcomes as one PR comment per marker, edited on every push instead of piling up.
+
+# The calling job needs `pull-requests: write`.
+# Outside a pull request it does nothing, so it can run with `if: always()` on any event.
+# @main is fine here: the action only gets a token that can comment on PRs.
+#   uses: lintas-media-danawa/shared-workflows/.github/actions/pr-comment@main
+
+inputs:
+  marker:
+    description: 'Identifies the comment to edit, e.g. terraform-check:dev; one comment per marker'
+    required: true
+  title:
+    description: 'Comment heading'
+    required: true
+  steps:
+    description: 'One `<label> = <outcome>` per line (e.g. `Format 🖌️ = ${{ steps.fmt.outcome }}`); an empty outcome shows as skipped'
+    required: true
+  summary:
+    description: 'Bold line below the steps'
+    required: false
+    default: ''
+  details_title:
+    description: 'Title of a collapsed block below the steps; empty for none'
+    required: false
+    default: ''
+  details_file:
+    description: 'File whose content fills the collapsed block (e.g. a scan report); truncated to fit a comment'
+    required: false
+    default: ''
+  details_lang:
+    description: 'Code block language of the collapsed block'
+    required: false
+    default: text
+  details_fallback:
+    description: 'Shown in the collapsed block when details_file is missing or empty'
+    required: false
+    default: 'Nothing to show: the step that writes it did not run, see the job log.'
+  delete_markers:
+    description: 'Markers of comments that no longer apply, one per line, deleted after posting'
+    required: false
+    default: ''
+  github_token:
+    description: 'Token with pull-requests: write'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    # Inputs go through env, never into the script: labels and titles may
+    # hold anything.
+    - uses: actions/github-script@v9
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        PR_COMMENT_MARKER: ${{ inputs.marker }}
+        PR_COMMENT_TITLE: ${{ inputs.title }}
+        PR_COMMENT_STEPS: ${{ inputs.steps }}
+        PR_COMMENT_SUMMARY: ${{ inputs.summary }}
+        PR_COMMENT_DETAILS_TITLE: ${{ inputs.details_title }}
+        PR_COMMENT_DETAILS_FILE: ${{ inputs.details_file }}
+        PR_COMMENT_DETAILS_LANG: ${{ inputs.details_lang }}
+        PR_COMMENT_DETAILS_FALLBACK: ${{ inputs.details_fallback }}
+        PR_COMMENT_DELETE_MARKERS: ${{ inputs.delete_markers }}
+      with:
+        github-token: ${{ inputs.github_token }}
+        script: |
+          const { run } = require(`${process.env.ACTION_PATH}/pr-comment.js`);
+          await run({ github, context });
