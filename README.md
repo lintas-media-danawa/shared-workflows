@@ -1,6 +1,6 @@
 # Shared Workflows
 
-Reusable GitHub Actions workflows for JOSS microservices deployment.
+Reusable GitHub Actions workflows and actions for JOSS microservices.
 
 ## Available Workflows
 
@@ -11,6 +11,12 @@ Reusable workflow for deploying Java (Spring Boot) microservices to Google Cloud
 ### `deploy-cloud-run-image.yml`
 
 Reusable workflow that builds any repo's Dockerfile, pushes the image tagged by commit, and points an existing Cloud Run service at it. It changes **only the image**. The rest of the service is Terraform's (e.g. shared-terraform's `cloud-run-service` module), so a deploy never drifts from a plan. See [Deploying an image to a Terraform-managed service](#deploying-an-image-to-a-terraform-managed-service).
+
+## Available Actions
+
+### `pr-comment`
+
+Posts a check's step outcomes as one PR comment, edited on every push instead of adding a new one. See [Commenting a check on the PR](#commenting-a-check-on-the-pr).
 
 ## Usage
 
@@ -195,7 +201,7 @@ permissions:
 
 jobs:
   deploy:
-    uses: lintas-media-danawa/shared-workflows/.github/workflows/deploy-cloud-run-image.yml@<commit SHA>
+    uses: lintas-media-danawa/shared-workflows/.github/workflows/deploy-cloud-run-image.yml@main
     permissions: { contents: read, id-token: write }
     with:
       environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'prod' || 'dev' }}
@@ -241,7 +247,49 @@ Outputs: `image`, the full reference deployed (`...:<sha>`), and `project_id`.
 
 **Pinning**
 
-This repo has no release tags, so pin a commit SHA rather than `@main`. The workflow receives the deploy identity, so a change on `main` would otherwise reach every repo's deploy immediately.
+Call it at `@main`, like everything else in this repo, which has no release tags.
+
+- A change on `main` reaches every repo's next deploy, and this workflow holds the deploy identity.
+- So test a change from a branch ref (`@<branch>`) in one repo before merging it.
+
+## Commenting a check on the PR
+
+`pr-comment` posts a check's step outcomes as one PR comment.
+
+- Every push edits that comment instead of adding a new one.
+- Run it with `if: always()`, so a failed step still gets reported.
+- Outside a pull request it does nothing.
+- The calling job needs `pull-requests: write`.
+
+```yaml
+permissions:
+  pull-requests: write
+
+steps:
+  # ...
+  - name: Comment check on PR
+    if: always() && github.event_name == 'pull_request'
+    uses: lintas-media-danawa/shared-workflows/.github/actions/pr-comment@main
+    with:
+      marker: model-test:${{ env.ENV }}
+      title: Model Test - `${{ env.ENV }}` 🧩
+      steps: |
+        Format 🖌️ = ${{ steps.fmt.outcome }}
+        Test 🧪 = ${{ steps.test.outcome }}
+      details_title: Show test output
+      details_file: test.txt
+```
+
+- `steps` holds one `<label> = <outcome>` per line. An empty outcome, from a step that didn't run, shows as skipped.
+- `marker` picks the comment to edit, so use one marker per check and environment.
+- `summary` adds a bold line below the steps.
+- `details_file` becomes a collapsed block below the steps, truncated to fit in a comment. Its path is relative to the workspace. When the file is missing, `details_fallback` is shown instead.
+- `delete_markers` removes comments that no longer apply, such as an old plan comment.
+- `pr-comment.js` also exports `upsertComment`, `deleteComment` and `read`, for an `actions/github-script` step that `require()`s it.
+
+**Pinning**
+
+Call it at `@main`, like the workflows. It only gets a token that can comment on PRs.
 
 ## Naming Conventions
 
