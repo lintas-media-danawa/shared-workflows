@@ -1,0 +1,209 @@
+name: Deploy Cloud Run Image (Reusable)
+
+# Builds a repo's image, pushes it tagged by commit, and points a Cloud Run
+# service at it. Only the image: everything else about the service (env,
+# secrets, scaling, ingress, IAM) belongs to Terraform, e.g. shared-terraform's
+# cloud-run-service module, which ignores the image, so a deploy never
+# drifts from a plan. Any stack: the Dockerfile does the build.
+#
+# Trunk-based: push to main -> dev, a release tag v* -> prod. A tag must
+# point at a commit already on `release_branch`, so prod only ever runs what
+# went through dev.
+#
+# Called as a job:
+#   deploy:
+#     uses: lintas-media-danawa/shared-workflows/.github/workflows/deploy-cloud-run-image.yml@<commit SHA>
+#     permissions: { contents: read, id-token: write }
+#     with:
+#       environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'prod' || 'dev' }}
+#       service: myapp-<env>
+#       ...
+#     secrets: inherit
+#
+# The GitHub environment named by `environment` must hold the secrets
+# WORKLOAD_IDENTITY_PROVIDER and SERVICE_ACCOUNT_EMAIL.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'GitHub environment holding the WIF secrets (dev/prod)'
+        type: string
+        required: true
+      service:
+        description: 'Cloud Run service to deploy to'
+        type: string
+        required: true
+      region:
+        description: 'Region of the service and its Artifact Registry repository'
+        type: string
+        required: true
+      repository:
+        description: 'Artifact Registry repository the image is pushed to'
+        type: string
+        required: true
+      image:
+        description: 'Image name inside the repository'
+        type: string
+        required: true
+      context:
+        description: 'Docker build context'
+        type: string
+        default: .
+      dockerfile:
+        description: 'Dockerfile path, relative to the repo root'
+        type: string
+        default: Dockerfile
+      project_id:
+        description: 'GCP project; empty reads project_id from var_file'
+        type: string
+        default: ''
+      var_file:
+        description: 'tfvars file whose project_id is used when project_id is empty; empty for terraform/environments/<environment>.tfvars'
+        type: string
+        default: ''
+      release_branch:
+        description: 'Branch a tag''s commit must be on before it deploys'
+        type: string
+        default: main
+      runs_on:
+        description: 'Runner label'
+        type: string
+        default: ubuntu-latest
+    outputs:
+      image:
+        description: 'Full image reference that was deployed (tagged by commit)'
+        value: ${{ jobs.deploy.outputs.image }}
+      project_id:
+        description: 'GCP project the service lives in'
+        value: ${{ jobs.deploy.outputs.project_id }}
+
+jobs:
+  deploy:
+    name: Build and deploy (${{ inputs.environment }})
+    runs-on: ${{ inputs.runs_on }}
+    environment: ${{ inputs.environment }}
+    # One rollout per environment and service at a time; a newer run waits
+    # instead of cancelling a deploy halfway.
+    concurrency:
+      group: deploy-${{ inputs.environment }}-${{ inputs.service }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image: ${{ steps.build.outputs.image }}
+      project_id: ${{ steps.project.outputs.project_id }}
+    env:
+      ENV: ${{ inputs.environment }}
+      SERVICE: ${{ inputs.service }}
+      REGION: ${{ inputs.region }}
+    steps:
+      # The WIF secrets come from bootstrap's outputs, so an empty one means
+      # the env isn't bootstrapped yet: stop here instead of failing at login.
+      - name: Bootstrap check
+        env:
+          WIF_PROVIDER: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          WIF_SERVICE_ACCOUNT: ${{ secrets.SERVICE_ACCOUNT_EMAIL }}
+        run: |
+          if [[ -z "${WIF_PROVIDER}" || -z "${WIF_SERVICE_ACCOUNT}" ]]; then
+            echo "::error::${ENV} isn't bootstrapped: WIF secrets not set in the ${ENV} environment"
+            exit 1
+          fi
+
+      # Full history, so a tag's commit can be checked against the release
+      # branch below.
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # A tag can be pushed on any commit; only one already on the release
+      # branch (so already deployed to dev) may reach prod.
+      - name: Release tag check
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_BRANCH: ${{ inputs.release_branch }}
+        run: |
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" "origin/${RELEASE_BRANCH}"; then
+            echo "::error::${GITHUB_REF_NAME} (${GITHUB_SHA::7}) isn't on ${RELEASE_BRANCH}: tag a commit that is"
+            exit 1
+          fi
+
+      - name: Resolve project
+        id: project
+        env:
+          PROJECT_ID: ${{ inputs.project_id }}
+          VAR_FILE: ${{ inputs.var_file || format('terraform/environments/{0}.tfvars', inputs.environment) }}
+        run: |
+          if [[ -z "${PROJECT_ID}" ]]; then
+            PROJECT_ID="$(sed -nE 's/^project_id *= *"([^"]+)".*/\1/p' "${VAR_FILE}")"
+          fi
+          if [[ -z "${PROJECT_ID}" ]]; then
+            echo "::error::no project_id input, and ${VAR_FILE} sets none"
+            exit 1
+          fi
+          echo "project_id=${PROJECT_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Set up Cloud SDK
+        id: gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      # Tagged by commit only, so every revision maps back to its source and
+      # no moving tag hides what's running.
+      - name: Build and push image
+        id: build
+        env:
+          PROJECT_ID: ${{ steps.project.outputs.project_id }}
+          REPOSITORY: ${{ inputs.repository }}
+          IMAGE_NAME: ${{ inputs.image }}
+          CONTEXT: ${{ inputs.context }}
+          DOCKERFILE: ${{ inputs.dockerfile }}
+        run: |
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/${IMAGE_NAME}:${GITHUB_SHA}"
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          docker build -f "${DOCKERFILE}" -t "${IMAGE}" "${CONTEXT}"
+          docker push "${IMAGE}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        env:
+          PROJECT_ID: ${{ steps.project.outputs.project_id }}
+          IMAGE: ${{ steps.build.outputs.image }}
+        run: |
+          gcloud run deploy "${SERVICE}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --image="${IMAGE}"
+
+      # Build can't run without the project/auth/SDK steps, so their failure
+      # is Build's.
+      - name: Summary
+        if: always()
+        env:
+          BUILD: ${{ (steps.project.outcome == 'failure' || steps.auth.outcome == 'failure' || steps.gcloud.outcome == 'failure') && 'failure' || steps.build.outcome }}
+          DEPLOY: ${{ steps.deploy.outcome }}
+        run: |
+          line() {
+            local outcome="${2:-skipped}" icon='⏭️'
+            [[ ${outcome} == success ]] && icon='✅'
+            [[ ${outcome} == failure ]] && icon='❌'
+            echo "#### ${icon} $1 \`${outcome}\`"
+          }
+          {
+            echo "### Deploy - \`${ENV}\` 🚀"
+            echo
+            line 'Build & push image 🐳' "${BUILD}"
+            line 'Deploy to Cloud Run ☁️' "${DEPLOY}"
+            echo
+            echo "*Run by: @${GITHUB_ACTOR}, ref \`${GITHUB_REF_NAME}\`, commit ${GITHUB_SHA::7}*"
+          } >> "$GITHUB_STEP_SUMMARY"
