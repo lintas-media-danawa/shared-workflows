@@ -12,7 +12,7 @@ name: Deploy Cloud Run Image (Reusable)
 #
 # Called as a job:
 #   deploy:
-#     uses: lintas-media-danawa/shared-workflows/.github/workflows/deploy-cloud-run-image.yml@<commit SHA>
+#     uses: lintas-media-danawa/shared-workflows/.github/workflows/deploy-cloud-run-image.yml@main
 #     permissions: { contents: read, id-token: write }
 #     with:
 #       environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'prod' || 'dev' }}

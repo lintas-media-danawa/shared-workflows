@@ -201,7 +201,7 @@ permissions:
 
 jobs:
   deploy:
-    uses: lintas-media-danawa/shared-workflows/.github/workflows/deploy-cloud-run-image.yml@<commit SHA>
+    uses: lintas-media-danawa/shared-workflows/.github/workflows/deploy-cloud-run-image.yml@main
     permissions: { contents: read, id-token: write }
     with:
       environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'prod' || 'dev' }}
@@ -247,7 +247,10 @@ Outputs: `image`, the full reference deployed (`...:<sha>`), and `project_id`.
 
 **Pinning**
 
-This repo has no release tags, so pin a commit SHA rather than `@main`. The workflow receives the deploy identity, so a change on `main` would otherwise reach every repo's deploy immediately.
+Call it at `@main`, like everything else in this repo, which has no release tags.
+
+- A change on `main` reaches every repo's next deploy, and this workflow holds the deploy identity.
+- So test a change from a branch ref (`@<branch>`) in one repo before merging it.
 
 ## Commenting a check on the PR
 
@@ -286,7 +289,7 @@ steps:
 
 **Pinning**
 
-`@main` is fine for this action, unlike the deploy workflows: it only gets a token that can comment on PRs.
+Call it at `@main`, like the workflows. It only gets a token that can comment on PRs.
 
 ## Naming Conventions
 

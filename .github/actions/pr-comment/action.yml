@@ -3,7 +3,7 @@ description: Post a check's step outcomes as one PR comment per marker, edited o
 
 # The calling job needs `pull-requests: write`.
 # Outside a pull request it does nothing, so it can run with `if: always()` on any event.
-# @main is fine here: the action only gets a token that can comment on PRs.
+# Called at @main, like the workflows; it only gets a token that can comment on PRs.
 #   uses: lintas-media-danawa/shared-workflows/.github/actions/pr-comment@main
 
 inputs:
